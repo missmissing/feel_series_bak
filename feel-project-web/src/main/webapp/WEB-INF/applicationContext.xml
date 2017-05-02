@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	   xmlns:context="http://www.springframework.org/schema/context"
+	   xmlns:aop="http://www.springframework.org/schema/aop" xmlns:tx="http://www.springframework.org/schema/tx"
+	   xsi:schemaLocation="http://www.springframework.org/schema/beans
+		http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context
+		http://www.springframework.org/schema/context/spring-context.xsd http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop.xsd http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx.xsd">
+
+	<!--annotation-->
+	<!-- Grab out properties for use in these Spring Configs -->
+	<context:property-placeholder
+			location="file:${catalina.home}/conf/application.properties,file:${catalina.home}/conf/mq-client.properties" />
+
+	<!-- enable autowire -->
+	<context:annotation-config/>
+	<!-- 扫描     @Service  @Transation 但不要扫描@Controller  -->
+	<context:component-scan base-package="com.feel">
+		<context:exclude-filter type="annotation" expression="org.springframework.stereotype.Controller"/>
+	</context:component-scan>
+
+	<!--jdbc-->
+	<bean id="master" class="org.apache.commons.dbcp.BasicDataSource"
+		  destroy-method="close">
+		<property name="driverClassName" value="com.mysql.jdbc.Driver" />
+		<property name="url"
+				  value="jdbc:mysql://${mysql.dbhost}:3306/lyancafe?useUnicode=true" />
+		<property name="username" value="${mysql.user}" />
+		<property name="password" value="${mysql.password}" />
+		<property name="maxActive" value="255" />
+		<property name="maxIdle" value="5" />
+		<property name="minIdle" value="1" />
+		<property name="maxWait" value="120000" />
+		<property name="validationQuery" value="select 1 from dual"></property>
+		<property name="testWhileIdle" value="true"></property>
+		<property name="timeBetweenEvictionRunsMillis" value="600000"></property>
+	</bean>
+	<bean id="slave" class="org.apache.commons.dbcp.BasicDataSource"
+		  destroy-method="close">
+		<property name="driverClassName" value="com.mysql.jdbc.Driver" />
+		<property name="url"
+				  value="jdbc:mysql://${mysql.dbhost}:3306/lyancafe?useUnicode=true" />
+		<property name="username" value="${mysql.user.report}" />
+		<property name="password" value="${mysql.password.report}" />
+		<property name="maxActive" value="30" />
+		<property name="maxIdle" value="5" />
+		<property name="minIdle" value="1" />
+		<property name="maxWait" value="120000" />
+		<property name="validationQuery" value="select 1 from dual"></property>
+		<property name="testWhileIdle" value="true"></property>
+		<property name="timeBetweenEvictionRunsMillis" value="600000"></property>
+	</bean>
+
+	<bean id="dataSource" class="com.feel.common.config.dyjdbc.DynamicDataSource">
+		<property name="targetDataSources">
+			<map>
+				<entry key="master" value-ref="master" />
+				<entry key="slave" value-ref="slave" />
+			</map>
+		</property>
+		<property name="defaultTargetDataSource" ref="master" />
+	</bean>
+	<!--jdbc end-->
+
+	<!--transation-->
+	<bean id="transactionManager"
+		  class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+		<property name="dataSource" ref="dataSource" />
+	</bean>
+
+	<!-- 注解驱动 -->
+	<tx:annotation-driven transaction-manager="transactionManager"/>
+
+	<!--aop transation 配置-->
+	<tx:advice id="txAdvice" transaction-manager="transactionManager">
+		<tx:attributes>
+			<tx:method name="get*" read-only="true" />
+			<tx:method name="query*" read-only="true" />
+			<!-- other methods use the default transaction settings (see below) -->
+			<tx:method name="*" />
+		</tx:attributes>
+	</tx:advice>
+	<!--transation end-->
+
+	<!--读写分离aop 配置-->
+	<bean id="dataSourceAspect" class="com.feel.common.config.dyjdbc.DataSourceAspect"/>
+
+	<!--aop-->
+	<aop:config proxy-target-class="true"/>
+	<aop:config expose-proxy="true">
+		<aop:pointcut id="boOperation" expression="execution(public * com.feel.*.service..*.*(..))" />
+		<aop:advisor advice-ref="txAdvice" pointcut-ref="boOperation" order="2"/>
+
+		<aop:aspect ref="dataSourceAspect" order="1">
+			<aop:before method="before" pointcut-ref="boOperation"/>
+		</aop:aspect>
+	</aop:config>
+
+	<!--mybatis-->
+	<bean id="sqlSessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+		<property name="dataSource" ref="dataSource" />
+		<!--<property name="configLocation" value="classpath:mybatis-config.xml" />
+		<property name="mapperLocations" value="classpath*:com/lyancafe/**/dao/**/*.xml"></property>
+		<property name="typeAliasesPackage" value="com.lyancafe.auth.model"/>-->
+	</bean>
+
+	<bean id="sqlSessionTemplate" class="org.mybatis.spring.SqlSessionTemplate">
+		<constructor-arg index="0" ref="sqlSessionFactory" />
+	</bean>
+
+	<!-- scan for mappers and let them be autowired -->
+	<bean class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+		<property name="basePackage" value="com.feel.**.dao" />
+	</bean>
+
+	<!--others-->
+	<!-- support file upload -->
+	<bean id="multipartResolver"
+		  class="org.springframework.web.multipart.commons.CommonsMultipartResolver">
+		<!-- one of the properties available; the maximum file size in bytes -->
+		<!-- 10000000=10M -->
+		<property name="maxUploadSize" value="50000000" />
+		<!-- to handle MaxUploadSizeExceededException in controller -->
+		<property name="resolveLazily" value="true" />
+	</bean>
+
+</beans>

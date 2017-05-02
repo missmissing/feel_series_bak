@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:aop="http://www.springframework.org/schema/aop"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans
+		http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context
+		http://www.springframework.org/schema/context/spring-context.xsd
+		http://www.springframework.org/schema/aop
+		http://www.springframework.org/schema/aop/spring-aop.xsd
+		http://www.springframework.org/schema/mvc
+		http://www.springframework.org/schema/mvc/spring-mvc.xsd">
+
+	<context:property-placeholder location="file:${catalina.home}/conf/application.properties" />
+
+	<!-- enable component scanning (of presentation layer only) -->
+	<!-- ①：对web包中的Controller类进行扫描，以完成Bean创建和自动依赖注入的功能 -->
+	<!-- 因为applicationContext.xml先于本文件加载，所以那边先进行扫描，其实是注入了的，byName/byType通过@Service(...)里面的值进行匹配 -->
+	<!-- 扫描基本包
+		 	把use-default-filters设为false是为了在扫描时不执行其它的扫描过滤器，只执行白名单中的扫描过滤器 controller
+		 -->
+	<context:component-scan base-package="com.feel.controller" use-default-filters="false">
+		<!-- 只扫描Controller  白名单-->
+		<context:include-filter type="annotation" expression="org.springframework.stereotype.Controller"/>
+	</context:component-scan>
+
+	<!-- enable spring MVC annotation -->
+	<!-- 处理器映射器  处理器适配器 -->
+	<mvc:annotation-driven conversion-service="conversionService"/>
+
+	<!-- 配置Converter转换器  去前后空格  转换日期  -->
+	<bean id="conversionService" class="org.springframework.format.support.FormattingConversionServiceFactoryBean">
+		<property name="converters">
+			<set>
+				<bean class="com.feel.common.convertion.CustomTrimConverter"></bean>
+			</set>
+		</property>
+	</bean>
+
+	<!-- to handle static resources -->
+	<mvc:default-servlet-handler />
+
+	<!-- 配置静态资源，直接映射到对应的文件夹，不被DispatcherServlet处理而由前面的default-servlet-handler处理，3.04新增功能，需要重新设置spring-mvc-3.0.xsd -->
+	<mvc:resources mapping="/public/**" location="/public/" />
+
+	<!-- exception handler -->
+	<bean id="exceptionResolver" class="com.feel.common.aop.ExceptionHandler"/>
+
+    <!-- @Aspect beans -->
+    <bean id="methodPerformanceInspector" class="com.feel.common.aop.ControllerPerformanceInspector" />
+	<aop:aspectj-autoproxy proxy-target-class="true">
+		<aop:include name="methodPerformanceInspector" />
+	</aop:aspectj-autoproxy>
+
+	<bean id="viewResolver"
+		class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+		<property name="viewClass"
+			value="org.springframework.web.servlet.view.JstlView" />
+		<property name="prefix" value="/WEB-INF/jsp/" />
+		<property name="suffix" value=".jsp" />
+	</bean>
+
+	<mvc:interceptors>
+		<!-- 添加拦截器，用于在日志中默认写入sessionId，用于问题查找 -->
+		<mvc:interceptor>
+			<mvc:mapping path="/**" /> <!-- *  -->
+			<bean class="com.feel.common.interceptor.SessionInterceptor" />
+		</mvc:interceptor>
+		<!-- 防止重复POST -->
+		<mvc:interceptor>
+			<mvc:mapping path="/**" /> <!-- *  -->
+			<bean class="com.feel.common.interceptor.PostTokenInterceptor" />
+		</mvc:interceptor>
+	</mvc:interceptors>
+	
+</beans>
